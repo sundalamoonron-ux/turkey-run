@@ -4,7 +4,7 @@
 // the vendored make.fun library. Outside the grader, MAKEFUN_OUTPUT_DIR
 // stands in for /output. Both runs write the same bytes.
 
-import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -13,9 +13,19 @@ const repoRoot = dirname(fileURLToPath(import.meta.url));
 const outputDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
 
 function handIn() {
-  // Start from a clean output directory so a stale file from an earlier
-  // run can never leak into this entry.
-  rmSync(outputDir, { recursive: true, force: true });
+  // Clear only the CONTENTS of the output directory, never the directory
+  // itself: the grader mounts /output writable but the filesystem above it
+  // is read-only, so rmSync(outputDir) throws EACCES for the unprivileged
+  // grader user (65534) and the run exits 1. Deleting the entries inside
+  // /output works, and a stale file from an earlier run can still never
+  // leak into this entry.
+  try {
+    for (const entry of readdirSync(outputDir)) {
+      rmSync(join(outputDir, entry), { recursive: true, force: true });
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
   mkdirSync(outputDir, { recursive: true });
   cpSync(join(repoRoot, 'game'), join(outputDir, 'game'), { recursive: true });
   cpSync(join(repoRoot, 'screenshots'), join(outputDir, 'screenshots'), { recursive: true });
